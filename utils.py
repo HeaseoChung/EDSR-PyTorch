@@ -19,6 +19,7 @@ def preprocess(img):
     # x 값 반환
     return x
 
+# 후처리 과정 함수
 def posrprocess(tensor):
     x = tensor.mul(255.0).cpu().numpy().squeeze(0)
     x = np.array(x).transpose([1,2,0])
