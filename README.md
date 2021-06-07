@@ -1,23 +1,23 @@
-# SRCNN-PyTorch
-Super-Resolution Using Deep Convolutional Networks
+# EDSR-PyTorch
+Enhanced Deep Residual Networks for Single Image Super-Resolution
 
 ## [Abstract]
-<center><img src="examples/SRCNN_architecture.png"></center>
+<center><img src="https://images.velog.io/images/heaseo/post/57707e8d-d458-4e95-9027-5e6b64cee9bc/EDSR_architecture.PNG"></center>
 
-이 논문은 최초로 딥 러닝을 이용한 새로운 super-resolution(초해상화) 기술을 제안한다. SR은 저해상도 이미지에서 고해상도 이미지를 복원하는 기술이다. 이 대단한 기술에도 고질적인 문제가 있는데, 하나의 입력에 대해 복수의 결과물이 나올 수 있는 해결하기 어려운 문제가 있다. 
+최근 초해상화 관련 논문은 deep convolutional neural networks (DCNN)을 이용한 모델들이 많았다. 특히, residual learning 기술들이 초해상화 성능 향상에 크게 기여했다. 이 논문이 발표하는 enhanced deep super-resolution network (EDSR)는 이 논문을 발표한 시점의 state-of-the-art 초해상화 기법보다 월등히 높은 성능을 낸다고 자신 있게 말한다. 다른 모델보다 EDSR이 더 좋은 성능을 낼 수 있었던 중요한 원인은 CNN 안에 필요 없는 모듈을 삭제하고 깊은 모델을 안정적으로 학습할 수 있었기 때문이었다. 이 논문에서 제안한 EDSR 모델은 이 당시 최고의 SR 모델들보다 뛰어난 benchmark 성능을 보여줬고 NTIRE2017Super-Resolution Challenge에서 우승도 했다.
 
-SRCNN은 Deep convolutional neural network (CNN)으로 구성되어 있으며, 저해상도 이미지와 고해상도 이미지가 한 쌍으로 이루어져 지도학습을 하는 딥러닝기반 인공지능이다. 기존에 있던 방법과는 다르게 각 CNN층을 별도로 관리하고 최적화한다.
-
-SRCNN은 가벼운 구조를 가지고 있었지만 논문발표 당시 품질과 성능은 최고였다.
-
-[더 보기](https://velog.io/@heaseo/내멋대로해석하는Image-Super-Resolution-Using-Deep-Convolutional-Networks-A.K.A-SRCNN)
+[더 보기](https://velog.io/@heaseo/내멋대로해석하는Enhanced-Deep-Residual-Networks-for-Single-Image-Super-Resolution-A.K.A-EDSR)
 
 <br>
 
 ## Usage
 train.py
 ```bash
-python train.py --train-file ${train_dataset} --eval-file ${test_dataset} --outputs-dir ${weights-dir} --scale ${2,3,4}
+#baseline
+python train.py --train-file ${train_dataset} --eval-file ${test_dataset} --outputs-dir ${weights-dir} --scale ${2,3,4} --num-feats 64 --num-blocks 16 --res-scale 1.0
+
+#standard
+python train.py --train-file ${train_dataset} --eval-file ${test_dataset} --outputs-dir ${weights-dir} --scale ${2,3,4} --num-feats 256 --num-blocks 32 --res-scale 0.1
 ```
 test.py
 ```bash
@@ -28,17 +28,5 @@ python test.py --weights-file ${best.pth} --image-file ${example.png} --scale ${
 
 ## Results
 
-<table>
-    <tr>
-        <td><center>Bicubic</center></td>
-        <td><center>SRCNN</center></td>
-    </tr>
-    <tr>
-    	<td>
-    		<center><img src="examples/butterfly_bicubic_x3.bmp"></center>
-    	</td>
-    	<td>
-    		<center><img src="examples/butterfly_SRCNN_x3.bmp"></center>
-    	</td>
-    </tr>
-</table>
+<center><img src="https://images.velog.io/images/heaseo/post/bd8ea304-4fe7-4dcb-9086-75df7e2281ee/result1.PNG"></center>
+<center><img src="https://images.velog.io/images/heaseo/post/24151c77-288c-4963-9d3e-3984beec2f5c/result2.PNG"></center>
