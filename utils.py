@@ -20,10 +20,11 @@ def preprocess(img):
     return x
 
 # 후처리 과정 함수
-def posrprocess(tensor):
+def postprocess(tensor):
     x = tensor.mul(255.0).cpu().numpy().squeeze(0)
     x = np.array(x).transpose([1,2,0])
     x = np.clip(x, 0.0, 255.0).astype(np.uint8)
+    return x
 
 # PSNR 값 계산 함수
 def calc_psnr(img1, img2):

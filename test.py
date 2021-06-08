@@ -17,7 +17,7 @@ if __name__ == '__main__':
     cudnn.benchmark = True
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    model = EDSR().to(device)
+    model = EDSR(scale_factor=args.scale).to(device)
     try:
         model.load_state_dict(torch.load(args.weights_file, map_location=device))
     except:
@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     hr = image.resize((image_width, image_height), resample=pil_image.BICUBIC)
     lr = hr.resize((hr.width // args.scale, hr.height // args.scale), resample=pil_image.BICUBIC)
-    bicubic = lr = lr.resize((lr.width * args.scale, lr.height * args.scale), resample=pil_image.BICUBIC)
+    bicubic = lr.resize((lr.width * args.scale, lr.height * args.scale), resample=pil_image.BICUBIC)
     bicubic.save(args.image_file.replace('.', '_bicubic_x{}.'.format(args.scale)))
 
     lr = preprocess(lr).to(device)
@@ -46,6 +46,7 @@ if __name__ == '__main__':
 
     with torch.no_grad():
         preds = model(lr)
+        print(preds.size())
 
     sr_psnr = calc_psnr(hr, preds)
     bic_psnr = calc_psnr(hr, bic)
