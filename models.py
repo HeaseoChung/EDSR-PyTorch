@@ -21,7 +21,8 @@ class EDSR(nn.Module):
     def __init__(self, scale_factor=2, num_channels=3, num_feats=64, num_blocks=16, res_scale=1.0):
         super(EDSR, self).__init__()
         self.head = nn.Conv2d(num_channels, num_feats, kernel_size=3, padding=3//2)
-        self.body = nn.ModuleList([ResBlock(num_feats, res_scale) for _ in range(num_blocks)])
+        body = [ResBlock(num_feats, res_scale) for _ in range(num_blocks)]
+        self.body = nn.Sequential(*body)
         self.tail = nn.Sequential(
             nn.Conv2d(num_feats, num_feats * (scale_factor ** 2), kernel_size=3, stride=1, padding=1), 
             nn.PixelShuffle(scale_factor),
