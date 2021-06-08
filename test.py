@@ -12,12 +12,16 @@ if __name__ == '__main__':
     parser.add_argument('--weights-file', type=str, required=True)
     parser.add_argument('--image-file', type=str, required=True)
     parser.add_argument('--scale', type=int, default=3)
+    parser.add_argument('--num-channels', type=int, default=3)
+    parser.add_argument('--num-feats', type=int, default=64)
+    parser.add_argument('--num-blocks', type=int, default=16)
+    parser.add_argument('--res-scale', type=float, default=1.0)
     args = parser.parse_args()
 
     cudnn.benchmark = True
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    model = EDSR(scale_factor=args.scale).to(device)
+    model = EDSR(scale_factor=args.scale, num_channels=args.num_channels, num_feats=args.num_feats, num_blocks=args.num_blocks, res_scale=args.res_scale).to(device)
     try:
         model.load_state_dict(torch.load(args.weights_file, map_location=device))
     except:
