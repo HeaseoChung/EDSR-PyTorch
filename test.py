@@ -1,7 +1,6 @@
 import argparse
 import torch
 import torch.backends.cudnn as cudnn
-import numpy as np
 import PIL.Image as pil_image
 
 from models import EDSR
