@@ -27,7 +27,14 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 
-def net_trainer(train_dataloader, eval_dataloader, model, pixel_criterion, net_optimizer, epoch, best_psnr, scaler, writer, device, args):
+def net_trainer(train_dataloader, eval_dataloader, model, pixel_criterion, net_optimizer, epoch, best_psnr, scaler, device, args):
+    print(f'net : {device}')
+    if device == 0:
+        """ 텐서보드 설정 """
+        writer = SummaryWriter(args.outputs_dir)
+    elif not args.distributed:
+        writer = SummaryWriter(args.outputs_dir)
+
     """ 모델 트레이닝 모드 """
     model.train()
     """ Loss & psnr 평균값 저장 인스턴스 """
@@ -115,20 +122,55 @@ def cleanup():
 
 
 def main_worker(gpu, args):
+    print(f'main : {gpu}')
     if args.distributed:
         args.rank = args.nr * args.gpus + gpu
         setup(args.rank, args.world_size)
 
-    """ 텐서보드 설정 """
-    args.writer = SummaryWriter(args.outputs_dir)
-
     """ EDSR 모델 설정 """
-    generator = EDSR(args.scale, args.n_channels, args.n_feats, args.n_resblocks, args.res_scale).cuda(gpu)
+    generator = EDSR(args.scale, args.n_channels, args.n_feats, args.n_resblocks, args.res_scale).to(gpu)
+    
+    """ 데이터셋 설정 """
+    train_dataset = Dataset(args.train_file, args.patch_size, args.scale)
+    eval_dataset = Dataset(args.eval_file, args.patch_size, args.scale)
+    train_sampler = None
+    test_sampler = None
+
     if args.distributed:
         generator = DDP(generator, device_ids=[gpu])
+        """ 데이터셋 & 데이터셋 설정 """
+        train_sampler = torch.utils.data.distributed.DistributedSampler(
+            train_dataset,
+            num_replicas=args.world_size,
+            rank=args.rank
+        )
+
+        test_sampler = torch.utils.data.distributed.DistributedSampler(
+            train_dataset,
+            num_replicas=args.world_size,
+            rank=args.rank
+         )
+
+    train_dataloader = DataLoader(
+                            dataset=train_dataset,
+                            batch_size=args.batch_size,
+                            shuffle=False,
+                            num_workers=args.num_workers,
+                            pin_memory=True,
+                            sampler=train_sampler,
+                        )
+
+    eval_dataloader = DataLoader(
+                                dataset=eval_dataset,
+                                batch_size=1,
+                                shuffle=False,
+                                num_workers=args.num_workers,
+                                pin_memory=True,
+                                sampler=test_sampler,
+                                )
 
     """ Loss 설정 """
-    pixel_criterion = nn.L1Loss().cuda(gpu)
+    pixel_criterion = nn.L1Loss().to(gpu)
     """ Optimizer 설정 """
     net_optimizer = torch.optim.Adam(generator.parameters(), args.psnr_lr, (0.9, 0.99))
     """ 인터벌 에폭 설정 """
@@ -176,40 +218,9 @@ def main_worker(gpu, args):
     #                 f"\tBatch size:                    {args.batch_size}\n"
     #                 )
 
-    """ 데이터셋 & 데이터셋 설정 """
-    train_dataset = Dataset(args.train_file, args.patch_size, args.scale)
-    train_sampler = torch.utils.data.distributed.DistributedSampler(
-    	train_dataset,
-    	num_replicas=args.world_size,
-    	rank=args.rank
-    )
-    train_dataloader = DataLoader(
-                            dataset=train_dataset,
-                            batch_size=args.batch_size,
-                            shuffle=False,
-                            num_workers=args.num_workers,
-                            pin_memory=True,
-                            sampler=train_sampler,
-                        )
-
-    eval_dataset = Dataset(args.eval_file, args.patch_size, args.scale)
-    test_sampler = torch.utils.data.distributed.DistributedSampler(
-    	train_dataset,
-    	num_replicas=args.world_size,
-    	rank=args.rank
-    )
-    eval_dataloader = DataLoader(
-                                dataset=eval_dataset,
-                                batch_size=1,
-                                shuffle=False,
-                                num_workers=args.num_workers,
-                                pin_memory=True,
-                                sampler=test_sampler,
-                                )
-
     """NET Training"""
     for epoch in range(start_net_epoch, total_net_epoch):
-        net_trainer(train_dataloader=train_dataloader, eval_dataloader=eval_dataloader, model=generator, pixel_criterion=pixel_criterion, net_optimizer=net_optimizer, epoch=epoch, best_psnr=best_psnr, scaler=scaler, writer=args.writer, device=gpu, args=args)
+        net_trainer(train_dataloader=train_dataloader, eval_dataloader=eval_dataloader, model=generator, pixel_criterion=pixel_criterion, net_optimizer=net_optimizer, epoch=epoch, best_psnr=best_psnr, scaler=scaler, device=gpu, args=args)
 
         net_scheduler.step()
 
@@ -240,7 +251,7 @@ if __name__ == '__main__':
 
     """ Distributed data parallel setup"""
     parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
-    parser.add_argument('-g', '--gpus', default=4, type=int, help='number of gpus per node')
+    parser.add_argument('-g', '--gpus', default=0, type=int, help='number of gpus per node')
     parser.add_argument('-nr', '--nr', default=0, type=int, help='ranking within the nodes')
     parser.add_argument('--distributed', action='store_true')
     args = parser.parse_args()
@@ -263,9 +274,9 @@ if __name__ == '__main__':
     # Ensure that every time the same input returns the same result.
     cudnn.deterministic = True
 
-
-
     if args.distributed:
         args.world_size = args.gpus * args.nodes
         mp.spawn(main_worker, nprocs=args.gpus, args=(args,), join=True)
+    else:
+        main_worker(args.gpus, args)
 
