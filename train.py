@@ -27,8 +27,22 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 
+""" 로그 설정 """
+logger = logging.getLogger(__name__)
+logging.basicConfig(format="[ %(levelname)s ] %(message)s", level=logging.INFO)
+
+
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+
+    # initialize the process group
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+
+def cleanup():
+    dist.destroy_process_group()
+
 def net_trainer(train_dataloader, eval_dataloader, model, pixel_criterion, net_optimizer, epoch, best_psnr, scaler, device, args):
-    print(f'net : {device}')
     if device == 0:
         """ 텐서보드 설정 """
         writer = SummaryWriter(args.outputs_dir)
@@ -70,19 +84,14 @@ def net_trainer(train_dataloader, eval_dataloader, model, pixel_criterion, net_o
         """ Loss 업데이트 """
         losses.update(loss.item(), len(lr))
 
-
-
-    # """  테스트 Epoch 시작 """
-    # model.eval()
-    # for i, (lr, hr) in enumerate(eval_dataloader):
-    #     lr = lr.to(device, non_blocking=True)
-    #     hr = hr.to(device, non_blocking=True)
-    #     with torch.no_grad():
-    #         preds = model(lr)
-    #     psnr.update(calc_psnr(preds, hr), len(lr))
-
-
-
+    """  테스트 Epoch 시작 """
+    model.eval()
+    for i, (lr, hr) in enumerate(eval_dataloader):
+        lr = lr.to(device, non_blocking=True)
+        hr = hr.to(device, non_blocking=True)
+        with torch.no_grad():
+            preds = model(lr)
+        psnr.update(calc_psnr(preds, hr), len(lr))
 
     if device == 0:
         """ 1 epoch 마다 텐서보드 업데이트 """
@@ -110,19 +119,8 @@ def net_trainer(train_dataloader, eval_dataloader, model, pixel_criterion, net_o
             )
         print("Training complete in: " + str(datetime.now() - start))
 
-def setup(rank, world_size):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
-
-    # initialize the process group
-    dist.init_process_group("gloo", rank=rank, world_size=world_size)
-
-def cleanup():
-    dist.destroy_process_group()
-
 
 def main_worker(gpu, args):
-    print(f'main : {gpu}')
     if args.distributed:
         args.rank = args.nr * args.gpus + gpu
         setup(args.rank, args.world_size)
@@ -154,7 +152,7 @@ def main_worker(gpu, args):
     train_dataloader = DataLoader(
                             dataset=train_dataset,
                             batch_size=args.batch_size,
-                            shuffle=False,
+                            shuffle=(train_sampler is None),
                             num_workers=args.num_workers,
                             pin_memory=True,
                             sampler=train_sampler,
@@ -162,11 +160,10 @@ def main_worker(gpu, args):
 
     eval_dataloader = DataLoader(
                                 dataset=eval_dataset,
-                                batch_size=1,
+                                batch_size=args.batch_size,
                                 shuffle=False,
                                 num_workers=args.num_workers,
                                 pin_memory=True,
-                                sampler=test_sampler,
                                 )
 
     """ Loss 설정 """
@@ -197,26 +194,26 @@ def main_worker(gpu, args):
         loss = checkpoint['loss']
         best_psnr = checkpoint['best_psnr']
 
-    # if gpu == 0:
-    #     """ EDSR 로그 인포 프린트 하기 """
-    #     args.logger.info(
-    #                 f"EDSR MODEL INFO:\n"
-    #                 f"\tScale factor:                  {args.scale}\n"
-    #                 f"\tNumber of channels:            {args.n_channels}\n"
-    #                 f"\tNumber of residual blocks:     {args.n_resblocks}\n"
-    #                 f"\tNumber of features:            {args.n_feats}\n"
-    #                 f"\tResidual scale:                {args.res_scale}\n"
+    if gpu == 0:
+        """ EDSR 로그 인포 프린트 하기 """
+        logger.info(
+                f"EDSR MODEL INFO:\n"
+                f"\tScale factor:                  {args.scale}\n"
+                f"\tNumber of channels:            {args.n_channels}\n"
+                f"\tNumber of residual blocks:     {args.n_resblocks}\n"
+                f"\tNumber of features:            {args.n_feats}\n"
+                f"\tResidual scale:                {args.res_scale}\n"
 
-    #                 f"EDSR MODEL Training Details:\n"
-    #                 f"\tStart Epoch:                   {start_net_epoch}\n"
-    #                 f"\tTotal Epoch:                   {total_net_epoch}\n"
-    #                 f"\tTrain directory path:          {args.train_file}\n"
-    #                 f"\tTest directory path:           {args.eval_file}\n"
-    #                 f"\tTrained model directory path:  {args.outputs_dir}\n"
-    #                 f"\tPSNR learning rate:            {args.psnr_lr}\n"
-    #                 f"\tPatch size:                    {args.patch_size}\n"
-    #                 f"\tBatch size:                    {args.batch_size}\n"
-    #                 )
+                f"EDSR MODEL Training Details:\n"
+                f"\tStart Epoch:                   {start_net_epoch}\n"
+                f"\tTotal Epoch:                   {total_net_epoch}\n"
+                f"\tTrain directory path:          {args.train_file}\n"
+                f"\tTest directory path:           {args.eval_file}\n"
+                f"\tTrained model directory path:  {args.outputs_dir}\n"
+                f"\tPSNR learning rate:            {args.psnr_lr}\n"
+                f"\tPatch size:                    {args.patch_size}\n"
+                f"\tBatch size:                    {args.batch_size}\n"
+                )
 
     """NET Training"""
     for epoch in range(start_net_epoch, total_net_epoch):
@@ -247,11 +244,10 @@ if __name__ == '__main__':
     parser.add_argument('--patch-size', type=int, default=256)
     parser.add_argument('--num-workers', type=int, default=8)
     parser.add_argument('--seed', type=int, default=123)
-    parser.add_argument('--cuda', type=int, default=0)
 
     """ Distributed data parallel setup"""
     parser.add_argument('-n', '--nodes', default=1, type=int, metavar='N')
-    parser.add_argument('-g', '--gpus', default=0, type=int, help='number of gpus per node')
+    parser.add_argument('-g', '--gpus', default=0, type=int, help='if DDP, number of gpus per node or if not ddp, gpu number')
     parser.add_argument('-nr', '--nr', default=0, type=int, help='ranking within the nodes')
     parser.add_argument('--distributed', action='store_true')
     args = parser.parse_args()
@@ -260,10 +256,6 @@ if __name__ == '__main__':
     args.outputs_dir = os.path.join(args.outputs_dir,  f"EDSRx{args.scale}")
     if not os.path.exists(args.outputs_dir):
         os.makedirs(args.outputs_dir)
-
-    # """ 로그 설정 """
-    # args.logger = logging.getLogger(__name__)
-    # logging.basicConfig(format="[ %(levelname)s ] %(message)s", level=logging.INFO)
 
     """ Seed 설정 """
     random.seed(args.seed)
