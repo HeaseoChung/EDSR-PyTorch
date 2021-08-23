@@ -31,8 +31,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 logger = logging.getLogger(__name__)
 logging.basicConfig(format="[ %(levelname)s ] %(message)s", level=logging.INFO)
 
-
 def setup(rank, world_size):
+    """ DDP 디바이스 설정 """
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
 
@@ -40,13 +40,12 @@ def setup(rank, world_size):
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
 def cleanup():
+    """ Kill DDP process group """
     dist.destroy_process_group()
 
 def net_trainer(train_dataloader, eval_dataloader, model, pixel_criterion, net_optimizer, epoch, best_psnr, scaler, device, args):
-    if device == 0:
+    if device == 0 or not args.distributed:
         """ 텐서보드 설정 """
-        writer = SummaryWriter(args.outputs_dir)
-    elif not args.distributed:
         writer = SummaryWriter(args.outputs_dir)
 
     """ 모델 트레이닝 모드 """
@@ -93,7 +92,7 @@ def net_trainer(train_dataloader, eval_dataloader, model, pixel_criterion, net_o
             preds = model(lr)
         psnr.update(calc_psnr(preds, hr), len(lr))
 
-    if device == 0:
+    if device == 0 or not args.distributed:
         """ 1 epoch 마다 텐서보드 업데이트 """
         writer.add_scalar('L1Loss/train', losses.avg, epoch)
 
@@ -218,8 +217,9 @@ def main_worker(gpu, args):
     """NET Training"""
     for epoch in range(start_net_epoch, total_net_epoch):
         net_trainer(train_dataloader=train_dataloader, eval_dataloader=eval_dataloader, model=generator, pixel_criterion=pixel_criterion, net_optimizer=net_optimizer, epoch=epoch, best_psnr=best_psnr, scaler=scaler, device=gpu, args=args)
-
         net_scheduler.step()
+    
+    cleanup()
 
 if __name__ == '__main__':
     """ Argparse setup """
