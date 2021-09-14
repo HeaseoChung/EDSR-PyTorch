@@ -34,7 +34,7 @@ logging.basicConfig(format="[ %(levelname)s ] %(message)s", level=logging.INFO)
 def setup(rank, world_size):
     """ DDP 디바이스 설정 """
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ['MASTER_PORT'] = '12345'
 
     # initialize the process group
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
@@ -99,22 +99,34 @@ def net_trainer(train_dataloader, eval_dataloader, model, pixel_criterion, net_o
         """ 1 epoch 마다 텐서보드 업데이트 """
         writer.add_scalar('psnr/test', psnr.avg, epoch)
 
+        
         if psnr.avg > best_psnr:
             best_psnr = psnr.avg
-            torch.save(
+            if args.distributed:
+                torch.save(
+                    model.module.state_dict(), os.path.join(args.outputs_dir, 'best.pth')
+                )
+        else:
+                torch.save(
                 model.state_dict(), os.path.join(args.outputs_dir, 'best.pth')
             )
 
         """ 모델 저장 """
         if epoch % 10 == 0:
+            state_dict = {
+                'epoch': epoch,
+                'optimizer_state_dict': net_optimizer.state_dict(),
+                'loss': loss,
+                'best_psnr': best_psnr,
+            }
+
+            if args.distributed:
+                state_dict['model_state_dict'] = model.module.state_dict()
+            else:
+                state_dict['model_state_dict'] = model.state_dict()
+
             torch.save(
-                {
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': net_optimizer.state_dict(),
-                    'loss': loss,
-                    'best_psnr': best_psnr,
-                }, os.path.join(args.outputs_dir, 'epoch_{}.pth'.format(epoch))
+                state_dict, os.path.join(args.outputs_dir, 'epoch_{}.pth'.format(epoch))
             )
         print("Training complete in: " + str(datetime.now() - start))
 
@@ -267,8 +279,9 @@ if __name__ == '__main__':
     cudnn.deterministic = True
 
     if args.distributed:
-        args.world_size = args.gpus * args.nodes
-        mp.spawn(main_worker, nprocs=args.gpus, args=(args,), join=True)
+        gpus = torch.cuda.device_count()
+        args.world_size = gpus * args.nodes
+        mp.spawn(main_worker, nprocs=gpus, args=(args,), join=True)
     else:
         main_worker(args.gpus, args)
 
