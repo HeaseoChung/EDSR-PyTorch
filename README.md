@@ -15,13 +15,15 @@ Enhanced Deep Residual Networks for Single Image Super-Resolution
 
 ## Usage
 train.py
-```bash
-#baseline
-python train.py --train-file ${train_dataset} --eval-file ${test_dataset} --outputs-dir ${weights-dir} --scale ${2,3,4} --num-feats 64 --num-blocks 16 --res-scale 1.0
 
-#standard
-python train.py --train-file ${train_dataset} --eval-file ${test_dataset} --outputs-dir ${weights-dir} --scale ${2,3,4} --num-feats 256 --num-blocks 32 --res-scale 0.1
+```bash
+#Multi-gpus training
+CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py --train-file ${train_dataset} --eval-file ${test_dataset} --outputs-dir ${weights-dir} --scale ${2,3,4} --num-feats ${number of features} --num-blocks ${number of blocks} --res-scale ${res_scale} --distributed 
+
+#Single gpu training
+CUDA_VISIBLE_DEVICES=0 python train.py --train-file ${train_dataset} --eval-file ${test_dataset} --outputs-dir ${weights-dir} --scale ${2,3,4} --num-feats ${number of features} --num-blocks ${number of blocks} --res-scale ${res_scale}
 ```
+
 test.py
 ```bash
 python test.py --weights-file ${best.pth} --image-file ${example.png} --scale ${2,3,4}
